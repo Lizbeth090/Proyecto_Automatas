@@ -1,3 +1,4 @@
+//prueba
 package com.mycompany.automatasproyecto1.view;
 
 import com.mxgraph.model.mxGeometry;
