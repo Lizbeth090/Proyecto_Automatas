@@ -1,5 +1,12 @@
 package com.mycompany.automatasproyecto1.view;
 
+import com.mycompany.automatasproyecto1.conversion.ConversorRegex;
+import com.mycompany.automatasproyecto1.conversion.ResultadoConversion;
+import com.mycompany.automatasproyecto1.conversion.VerificadorEquivalencia;
+import com.mycompany.automatasproyecto1.simulation.SimuladorAFD;
+import com.mycompany.automatasproyecto1.simulation.ResultadoSimulacion;
+import com.mycompany.automatasproyecto1.simulation.PasoSimulacion;
+
 import com.mxgraph.model.mxGeometry;
 import com.mxgraph.swing.mxGraphComponent;
 import com.mxgraph.util.mxConstants;
@@ -61,9 +68,8 @@ public class MainFrame extends JFrame {
     private Object celdaOrigenTransicion = null;
 
     private Timer timerSimulacion;
-    private String cadenaSimulacion = "";
-    private int posicionSimulacion = 0;
-    private Estado estadoActualSimulacion = null;
+    private ResultadoSimulacion resultadoSimulacionActual;
+    private int indicePasoSimulacion = 0;
 
     private JTextField campoCadena;
     private JLabel etiquetaResultado;
@@ -476,15 +482,65 @@ public class MainFrame extends JFrame {
         
         //BOTÓN DE CONVERSION REGEX
         
+        
         btnConvertirRegex.addActionListener(e -> {
 
             VentanaConversionRegex ventana =
                     new VentanaConversionRegex();
 
             ventana.mostrarCopiaAutomata(graph);
-            ventana.setVisible(true);
 
+            
+            ventana.configurarAccionConversion(() -> {
+
+                try {
+                    ResultadoConversion resultado =
+                            new ConversorRegex().convertirConPasos(automata);
+
+                    ventana.cargarResultadoConversion(resultado, graph);
+
+                    ventana.configurarVerificador(cadena -> {
+
+                        try {
+                            VerificadorEquivalencia verificador =
+                                    new VerificadorEquivalencia();
+
+                            boolean aceptadaAFD =
+                                    verificador.aceptaAFD(automata, cadena);
+
+                            boolean aceptadaRegex =
+                                    verificador.aceptaRegex(
+                                            resultado.getExpresion(), cadena
+                                    );
+
+                            ventana.mostrarResultadoVerificacion(
+                                    aceptadaAFD, aceptadaRegex
+                            );
+
+                        } catch (IllegalArgumentException ex) {
+                            JOptionPane.showMessageDialog(
+                                    ventana,
+                                    ex.getMessage(),
+                                    "Error de verificación",
+                                    JOptionPane.WARNING_MESSAGE
+                            );
+                        }
+                    });
+
+                } catch (IllegalArgumentException ex) {
+                    JOptionPane.showMessageDialog(
+                            ventana,
+                            ex.getMessage(),
+                            "Error de conversión",
+                            JOptionPane.WARNING_MESSAGE
+                    );
+                }
+            });
+
+
+            ventana.setVisible(true);
         });
+
         
         
         //BOTÓN REINICIAR
@@ -1122,67 +1178,43 @@ private void actualizarEstiloEstados() {
     // INICIAR SIMULACIÓN
    
 
+    
     private void iniciarSimulacion() {
 
-        if (
-                timerSimulacion != null
-                && timerSimulacion.isRunning()
-        ) {
-
+        if (timerSimulacion != null) {
             timerSimulacion.stop();
         }
 
-       
+        restaurarColoresSimulacion();
 
-        if (
-                automata.getEstadoInicial()
-                == null
-        ) {
-
+        if (automata.getEstadoInicial() == null) {
             JOptionPane.showMessageDialog(
                     this,
                     "Primero debes establecer un estado inicial."
             );
-
             return;
         }
 
-        cadenaSimulacion =
-                campoCadena.getText();
+        SimuladorAFD simulador = new SimuladorAFD(automata);
 
-        posicionSimulacion =
-                0;
+        resultadoSimulacionActual =
+                simulador.simular(campoCadena.getText());
 
-        estadoActualSimulacion =
-                automata.getEstadoInicial();
+        indicePasoSimulacion = 1;
 
-        etiquetaResultado.setText(
-                "Resultado: Simulando..."
-        );
+        etiquetaResultado.setText("Resultado: Simulando...");
 
-        seleccionarEstadoVisual(
-                estadoActualSimulacion
-        );
+        seleccionarEstadoVisual(automata.getEstadoInicial());
 
-        // ---------------------------------------------------------
-        // CADENA VACÍA
-        // ---------------------------------------------------------
-
-        if (cadenaSimulacion.isEmpty()) {
-
+        if (resultadoSimulacionActual.getPasos().size() <= 1) {
             finalizarSimulacion();
-
             return;
         }
 
-        
-
-        timerSimulacion =
-                new Timer(
-                        800,
-                        e ->
-                                ejecutarPasoSimulacion()
-                );
+        timerSimulacion = new Timer(
+                800,
+                e -> ejecutarPasoSimulacion()
+        );
 
         timerSimulacion.start();
     }
@@ -1191,144 +1223,65 @@ private void actualizarEstiloEstados() {
     // EJECUTAR PASO DE SIMULACIÓN
     
 
+
     private void ejecutarPasoSimulacion() {
 
-        if (
-                posicionSimulacion
-                >= cadenaSimulacion.length()
-        ) {
-
-            finalizarSimulacion();
-
+        if (resultadoSimulacionActual == null) {
             return;
         }
 
-        char caracter =
-                cadenaSimulacion.charAt(
-                        posicionSimulacion
-                );
+        if (indicePasoSimulacion >=
+                resultadoSimulacionActual.getPasos().size()) {
+            finalizarSimulacion();
+            return;
+        }
 
-        String simbolo =
-                String.valueOf(
-                        caracter
-                );
+        PasoSimulacion paso =
+                resultadoSimulacionActual.getPasos()
+                        .get(indicePasoSimulacion);
 
-        Estado siguiente =
-                buscarSiguienteEstado(
-                        estadoActualSimulacion,
-                        simbolo
-                );
+        indicePasoSimulacion++;
 
-       
-        // NO EXISTE TRANSICIÓN
-        
-
-        if (siguiente == null) {
-
-            timerSimulacion.stop();
-
-            etiquetaResultado.setText(
-                    "Resultado: RECHAZADA"
-            );
+        if (paso.tieneError()) {
+            finalizarSimulacion();
 
             JOptionPane.showMessageDialog(
                     this,
-                    "La cadena fue rechazada.\n\n"
-                    + "No existe una transición desde "
-                    + estadoActualSimulacion.getNombre()
-                    + " con el símbolo '"
-                    + simbolo
-                    + "'."
+                    paso.getMensaje(),
+                    "Validación de cadena",
+                    JOptionPane.WARNING_MESSAGE
             );
-
             return;
         }
 
-        
-        // AVANZAR AL SIGUIENTE ESTADO
-       
-
-        Estado origenPaso = estadoActualSimulacion;
-
-        estadoActualSimulacion = siguiente;
-
-        posicionSimulacion++;
-
         seleccionarPasoVisual(
-                origenPaso,
-                siguiente,
-                simbolo
+                paso.getEstadoOrigen(),
+                paso.getEstadoDestino(),
+                paso.getSimboloLeido()
         );
 
-        // ---------------------------------------------------------
-        // FINALIZAR SI YA SE PROCESÓ TODA LA CADENA
-        // ---------------------------------------------------------
-
-        if (
-                posicionSimulacion
-                >= cadenaSimulacion.length()
-        ) {
-
+        if (indicePasoSimulacion >=
+                resultadoSimulacionActual.getPasos().size()) {
             finalizarSimulacion();
         }
-    }
-
-    // BUSCAR SIGUIENTE ESTADO
-
-    private Estado buscarSiguienteEstado(
-            Estado actual,
-            String simbolo) {
-
-        for (
-                Transicion transicion
-                : automata.getTransiciones()
-        ) {
-
-            if (
-                    transicion.getOrigen()
-                    == actual
-                    &&
-                    transicion.getSimbolo()
-                            .equals(simbolo)
-            ) {
-
-                return transicion.getDestino();
-            }
-        }
-
-        return null;
     }
 
     // FINALIZAR SIMULACIÓN
 
     private void finalizarSimulacion() {
 
-        if (
-                timerSimulacion != null
-                && timerSimulacion.isRunning()
-        ) {
-
+        if (timerSimulacion != null) {
             timerSimulacion.stop();
         }
 
-        if (
-                automata
-                        .getEstadosAceptacion()
-                        .contains(
-                                estadoActualSimulacion
-                        )
-        ) {
-
-            etiquetaResultado.setText(
-                    "Resultado: ACEPTADA"
-            );
-
-        } else {
-
-            etiquetaResultado.setText(
-                    "Resultado: RECHAZADA"
-            );
+        if (resultadoSimulacionActual == null) {
+            return;
         }
+
+        etiquetaResultado.setText(
+                "Resultado: "
+                + resultadoSimulacionActual.getEstadoResultado()
+        );
     }
 
     // SELECCIONAR ESTADO VISUALMENTE
@@ -1509,36 +1462,22 @@ private void actualizarEstiloEstados() {
     
     //REINICIAR SIMULACIÓN 
     
-    private void reiniciarSimulacion() {
+   private void reiniciarSimulacion() {
 
-        // Detener cualquier animación en ejecución
         if (timerSimulacion != null) {
             timerSimulacion.stop();
             timerSimulacion = null;
         }
 
-        // Reiniciar datos de la simulación
-        cadenaSimulacion = "";
-        posicionSimulacion = 0;
-        estadoActualSimulacion = null;
+        resultadoSimulacionActual = null;
+        indicePasoSimulacion = 0;
 
-        // Limpiar el campo de entrada
         campoCadena.setText("");
-
-        // Reiniciar resultado
         etiquetaResultado.setText("Resultado: ---");
 
-        // Quitar selección visual de los estados
-        graph.clearSelection();
-
-        // Actualizar lienzo
-        graphComponent.repaint();
-        
         restaurarColoresSimulacion();
-        
+        graph.clearSelection();
         graphComponent.repaint();
-        
-        
     }
 
     //SEPARAR TRANSICIONES

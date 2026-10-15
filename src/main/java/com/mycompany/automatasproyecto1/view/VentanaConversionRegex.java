@@ -1,6 +1,10 @@
 
 package com.mycompany.automatasproyecto1.view;
 
+import com.mycompany.automatasproyecto1.conversion.PasoConversion;
+import com.mycompany.automatasproyecto1.conversion.ResultadoConversion;
+import com.mycompany.automatasproyecto1.conversion.NormalizadorAutomata;
+
 import com.mxgraph.view.mxGraph;
 import com.mxgraph.swing.mxGraphComponent;
 import com.mxgraph.util.mxRectangle;
@@ -11,6 +15,8 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import javax.swing.*;
 
 public class VentanaConversionRegex extends JFrame {
@@ -805,6 +811,148 @@ public class VentanaConversionRegex extends JFrame {
     public void configurarAccionConversion(Runnable accion) {
         this.accionConversion = accion;
         botonIniciar.setEnabled(accion != null);
+    }
+    
+    // Mostrar la expresión regular calculada
+    public void mostrarRegexFinal(String regex) {
+        campoRegex.setText(regex);
+    }
+    
+    
+    public void cargarResultadoConversion(
+            ResultadoConversion resultado, mxGraph original) {
+
+        mostrarCopiaAutomata(original);
+
+        for (PasoConversion paso : resultado.getPasos()) {
+
+            mxGraph grafoPaso = construirGrafoPaso(paso);
+
+            agregarPasoVisual(
+                    grafoPaso,
+                    paso.getDescripcion(),
+                    paso.getDescripcion(),
+                    ""
+            );
+        }
+
+        // Guardar la Regex en el último paso
+        if (!pasos.isEmpty()) {
+            pasos.get(pasos.size() - 1).regex =
+                    resultado.getExpresion().toString();
+        }
+
+        mostrarPaso(0);
+    }
+
+    // Construir el grafo de cada paso de conversión
+    private mxGraph construirGrafoPaso(PasoConversion paso) {
+
+        mxGraph grafo = new mxGraph();
+        grafo.setConstrainChildren(false);
+        grafo.setCellsMovable(false);
+        grafo.setCellsResizable(false);
+        grafo.setCellsEditable(false);
+        grafo.setCellsBendable(false);
+
+        Map<String, Object> vertices = new HashMap<>();
+        Object parent = grafo.getDefaultParent();
+
+        java.util.List<String> nombres = new ArrayList<>();
+
+        nombres.add(paso.getInicio());
+
+        for (String nombre : paso.getEstados()) {
+            if (!nombre.equals(paso.getInicio())
+                    && !nombre.equals(paso.getAceptacion())) {
+                nombres.add(nombre);
+            }
+        }
+
+        if (!nombres.contains(paso.getAceptacion())) {
+            nombres.add(paso.getAceptacion());
+        }
+
+        grafo.getModel().beginUpdate();
+
+        try {
+            for (int i = 0; i < nombres.size(); i++) {
+
+                String nombre = nombres.get(i);
+
+                int columna = i % 4;
+                int fila = i / 4;
+
+                int x = 90 + columna * 170;
+                int y = 100 + fila * 160;
+
+                boolean esFinal =
+                        nombre.equals(paso.getAceptacion());
+
+                String estilo =
+                        "shape=" + (esFinal
+                        ? mxConstants.SHAPE_DOUBLE_ELLIPSE
+                        : mxConstants.SHAPE_ELLIPSE)
+                        + ";fillColor=#FFFFFF;"
+                        + "strokeColor=#333333;"
+                        + "strokeWidth=2;"
+                        + "fontSize=15;"
+                        + "align=center;"
+                        + "verticalAlign=middle;";
+
+                Object vertice = grafo.insertVertex(
+                        parent, null, nombre,
+                        x, y, 85, 85, estilo
+                );
+
+                vertices.put(nombre, vertice);
+            }
+
+            // Indicador exterior del estado inicial
+            Object inicio = vertices.get(paso.getInicio());
+
+            if (inicio != null) {
+                grafo.insertVertex(
+                        inicio, null, "➜",
+                        -36, 32, 48, 36,
+                        "shape=label;"
+                        + "fillColor=none;"
+                        + "strokeColor=none;"
+                        + "fontSize=28;"
+                        + "movable=0;"
+                        + "editable=0;"
+                        + "selectable=0;"
+                );
+            }
+
+            // Transiciones calculadas por el algoritmo
+            for (NormalizadorAutomata.Arista arista
+                    : paso.getTransiciones()) {
+
+                Object origen = vertices.get(arista.getOrigen());
+                Object destino = vertices.get(arista.getDestino());
+
+                if (origen == null || destino == null) {
+                    continue;
+                }
+
+                grafo.insertEdge(
+                        parent, null,
+                        arista.getSimbolo(),
+                        origen, destino,
+                        "strokeColor=#40566E;"
+                        + "strokeWidth=2;"
+                        + "endArrow=classic;"
+                        + "fontSize=14;"
+                        + "labelBackgroundColor=#FFFFFF;"
+                );
+            }
+
+        } finally {
+            grafo.getModel().endUpdate();
+        }
+
+        return grafo;
     }
 
 }
