@@ -1,26 +1,33 @@
 package com.mycompany.automatasproyecto1.view;
 
+import com.mycompany.automatasproyecto1.io.RestauradorModeloAFD;
 import com.mycompany.automatasproyecto1.conversion.ConversorRegex;
 import com.mycompany.automatasproyecto1.conversion.ResultadoConversion;
 import com.mycompany.automatasproyecto1.conversion.VerificadorEquivalencia;
 import com.mycompany.automatasproyecto1.simulation.SimuladorAFD;
 import com.mycompany.automatasproyecto1.simulation.ResultadoSimulacion;
-import com.mycompany.automatasproyecto1.simulation.PasoSimulacion;
 import com.mycompany.automatasproyecto1.io.AutomataJson;
+import com.mycompany.automatasproyecto1.view.components.EstilosUI;
+import com.mycompany.automatasproyecto1.view.components.PanelMensajes;
+import com.mycompany.automatasproyecto1.view.editor.EditorVisualAFD;
+import com.mycompany.automatasproyecto1.view.simulation.AnimadorSimulacion;
+import com.mycompany.automatasproyecto1.view.graph.CurvaAFD;
+import com.mycompany.automatasproyecto1.view.graph.GeometriaTransicionesAFD;
 
+import com.mxgraph.canvas.mxGraphics2DCanvas;
 import com.mxgraph.model.mxGeometry;
 import com.mxgraph.swing.mxGraphComponent;
 import com.mxgraph.util.mxConstants;
 import com.mxgraph.util.mxPoint;
 import com.mxgraph.view.mxGraph;
 import com.mxgraph.util.mxEvent;
+import com.mxgraph.view.mxPerimeter;
 
 import com.mycompany.automatasproyecto1.controller.AutomataController;
 import com.mycompany.automatasproyecto1.model.Automata;
 import com.mycompany.automatasproyecto1.model.Estado;
 import com.mycompany.automatasproyecto1.model.Transicion;
 
-import javax.swing.border.*;
 import javax.swing.BorderFactory;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.JButton;
@@ -30,10 +37,8 @@ import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.Timer;
+
 
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -50,15 +55,24 @@ import java.awt.event.MouseEvent;
 import java.util.HashMap;
 import java.util.Map;
 
-import java.nio.file.Files;
-import java.nio.charset.StandardCharsets;
-
 import java.io.IOException;
 
 /**
  * Ventana principal del editor de autómatas.
  */
 public class MainFrame extends JFrame {
+    
+    // CONFIGURACIÓN VISUAL DE LOS ESTADOS
+    private static final int TAMANO_ESTADO = 80;
+
+    private static final String ESTILO_ESTADO =
+            "shape=ellipse;"
+            + "fillColor=#FFFFFF;"
+            + "strokeColor=#000000;"
+            + "strokeWidth=2;"
+            + "fontSize=16;"
+            + "align=center;"
+            + "verticalAlign=middle;";
 
     private JPanel panelHerramientas;
     private JPanel panelLienzo;
@@ -82,36 +96,96 @@ public class MainFrame extends JFrame {
     private Estado estadoOrigenTransicion = null;
     private Object celdaOrigenTransicion = null;
 
-    private Timer timerSimulacion;
-    private ResultadoSimulacion resultadoSimulacionActual;
-    private int indicePasoSimulacion = 0;
-
     private JTextField campoCadena;
     private JLabel etiquetaResultado;
     
-    private final Map<Object, String> estilosResaltados = new HashMap<>();
+    private final PanelMensajes scrollMensajes =
+        new PanelMensajes();
     
-    private final JLabel etiquetaAviso = new JLabel(" ");
+    private AnimadorSimulacion animadorSimulacion;
+    
+    private EditorVisualAFD editorVisualAFD;
 
-    private final javax.swing.Timer temporizadorAviso =
-        new javax.swing.Timer(2800, e -> {
-            etiquetaAviso.setText(" ");
+    
+    /**
+    * Inicializa el grafo y configura su comportamiento visual.
+    */
+    private void configurarGrafo() {
+
+        graph = new mxGraph();
+        
+        // Registrar curva corregida para el editor AFD.
+        mxGraphics2DCanvas.putShape(
+                "curvaAFD",
+                new CurvaAFD()
+        );
+        
+        // Conectar las transiciones al borde real
+        // de los estados circulares.
+        graph.getStylesheet()
+                .getDefaultVertexStyle()
+                .put(
+                        mxConstants.STYLE_PERIMETER,
+                        mxPerimeter.EllipsePerimeter
+                );
+        
+        // ESTILO GENERAL DE LAS TRANSICIONES
+        graph.getStylesheet().getDefaultEdgeStyle().put(
+                mxConstants.STYLE_ENDARROW,
+                mxConstants.ARROW_BLOCK
+        );
+
+        graph.getStylesheet().getDefaultEdgeStyle().put(
+                mxConstants.STYLE_ENDSIZE,
+                12
+        );
+
+        graph.getStylesheet().getDefaultEdgeStyle().put(
+                mxConstants.STYLE_STROKEWIDTH,
+                2
+        );
+
+        // FLECHA INICIAL FUERA DEL CIRCULO
+        
+        graph.setConstrainChildren(false);
+        
+        graph.setCellsEditable(false);
+        
+        // Evitar que las transiciones se desconecten
+        
+        graph.setCellsDisconnectable(false);
+        
+        graph.setAllowDanglingEdges(false);
+        
+        graph.setDisconnectOnMove(false);
+
+        // Evitar deformarlas arrastrando sus puntos
+        
+        graph.setCellsBendable(false);
+        
+        // Impedir cambiar el tamaño de los estados
+        
+        graph.setCellsResizable(false);
+
+        // Permitir mover los estados
+        
+        graph.setCellsMovable(true);
+
+        graph.addListener(mxEvent.CELLS_MOVED, (sender, evt) -> {
+            Object[] movidas = (Object[]) evt.getProperty("cells");
+            if (movidas == null) return;
+
+            for (Object celda : movidas) {
+                if (mapaEstados.containsKey(celda)) {
+                    javax.swing.SwingUtilities.invokeLater(
+                            this::actualizarCurvasTransiciones);
+                    break;
+                }
+            }
         });
-    
-    private final Color COLOR_FONDO = new Color(245, 240, 255);
-    private final Color COLOR_PANEL = new Color(255, 255, 255);
-    private final Color COLOR_LILA = new Color(212, 190, 255);
-    private final Color COLOR_LILA_OSCURO = new Color(140, 110, 210);
-    private final Color COLOR_BOTON = new Color(196, 173, 255);
-    private final Color COLOR_BOTON_TEXTO = new Color(55, 35, 110);
-    private final Color COLOR_BORDE = new Color(220, 210, 245);
-    private final Color COLOR_MENSAJE = new Color(88, 70, 150);
-    
-    private final JTextArea areaMensajes = 
-            new JTextArea();
-    private final JScrollPane scrollMensajes =
-            new JScrollPane(areaMensajes);
 
+    }
+    
     /**
      * Constructor de la ventana.
      */
@@ -128,56 +202,6 @@ public class MainFrame extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
-        
-        
-       // BARRA INFORMATIVA
-        etiquetaAviso.setBorder(
-                BorderFactory.createEmptyBorder(8, 12, 8, 12)
-        );
-
-        etiquetaAviso.setForeground(
-                new java.awt.Color(45, 90, 150)
-        );
-
-        temporizadorAviso.setRepeats(false);
-        
-        // CONFIGURACIÓN DEL PANEL DE MENSAJES
-
-        areaMensajes.setEditable(false);
-        areaMensajes.setLineWrap(true);
-        areaMensajes.setWrapStyleWord(true);
-
-        areaMensajes.setFont(
-                new Font("Segoe UI", Font.PLAIN, 13)
-        );
-
-        areaMensajes.setForeground(
-                new Color(88, 70, 150)
-        );
-
-        areaMensajes.setBackground(
-                new Color(252, 249, 255)
-        );
-
-        areaMensajes.setBorder(
-                BorderFactory.createEmptyBorder(10, 12, 10, 12)
-        );
-
-        scrollMensajes.setBorder(
-                BorderFactory.createTitledBorder(
-                        BorderFactory.createLineBorder(
-                                new Color(196, 173, 255), 2, true
-                        ),
-                        "✦ Mensajes del sistema"
-                )
-        );
-
-        scrollMensajes.setPreferredSize(
-                new Dimension(280, 140)
-        );
-
-        areaMensajes.setText("✓ Editor listo para comenzar.\n");
-
 
         JPanel encabezado = new JPanel(new BorderLayout());
 
@@ -221,72 +245,8 @@ public class MainFrame extends JFrame {
 
         
         // PANEL DE HERRAMIENTAS
-        
-        panelHerramientas = new JPanel();
-
-        panelHerramientas.setPreferredSize(
-                new Dimension(180, 0)
-        );
-
-        panelHerramientas.setBorder(
-                BorderFactory.createTitledBorder(
-                        "Herramientas"
-                )
-        );
-
-        panelHerramientas.setLayout(
-                new GridLayout(9, 1, 5, 5)
-        );
-
-        JButton btnAgregarEstado =
-                new JButton("Agregar Estado");
-
-        JButton btnTransicion =
-                new JButton("Crear Transición");
-
-        JButton btnInicial =
-                new JButton("Estado Inicial");
-
-        JButton btnAceptacion =
-                new JButton("Estado Aceptación");
-
-        JButton btnEliminar =
-                new JButton("Eliminar");
-
        
-        JButton btnRenombrar =
-                new JButton("Renombrar Estado");
-        
-        JButton btnEditarTransicion =
-                new JButton("Editar Transición");
-        
-        JButton btnImportar =
-                new JButton("Importar Autómata");
-
-        JButton btnExportar =
-                new JButton("Exportar Autómata");
-
-        panelHerramientas.add(btnAgregarEstado);
-        panelHerramientas.add(btnTransicion);
-        panelHerramientas.add(btnInicial);
-        panelHerramientas.add(btnAceptacion);
-        panelHerramientas.add(btnEliminar);
-        panelHerramientas.add(btnRenombrar);
-        panelHerramientas.add(btnEditarTransicion);
-        panelHerramientas.add(btnImportar);
-        panelHerramientas.add(btnExportar);
-        
-        
-        estilizarBotones(panelHerramientas);
-
-        // Destacar Importar y Exportar
-        btnImportar.setBackground(new java.awt.Color(197, 215, 255));
-        btnExportar.setBackground(new java.awt.Color(255, 205, 230));
-
-        panelHerramientas.setBackground(
-                new java.awt.Color(250, 247, 255)
-        );
-
+        configurarPanelHerramientas();
         
         // PANEL DEL LIENZO
         
@@ -303,52 +263,25 @@ public class MainFrame extends JFrame {
                 new BorderLayout()
         );
 
-        graph = new mxGraph();
+        configurarGrafo();
         
-        // FLECHA INICIAL FUERA DEL CIRCULO
-        
-        graph.setConstrainChildren(false);
-        
-        graph.setCellsEditable(false);
-        
-        // Evitar que las transiciones se desconecten
-        
-        graph.setCellsDisconnectable(false);
-        
-        graph.setAllowDanglingEdges(false);
-        
-        graph.setDisconnectOnMove(false);
-
-        // Evitar deformarlas arrastrando sus puntos
-        
-        graph.setCellsBendable(false);
-        
-        // Impedir cambiar el tamaño de los estados
-        
-        graph.setCellsResizable(false);
-
-        // Permitir mover los estados
-        
-        graph.setCellsMovable(true);
-
-        graph.addListener(mxEvent.CELLS_MOVED, (sender, evt) -> {
-            Object[] movidas = (Object[]) evt.getProperty("cells");
-            if (movidas == null) return;
-
-            for (Object celda : movidas) {
-                if (mapaEstados.containsKey(celda)) {
-                    javax.swing.SwingUtilities.invokeLater(
-                            this::actualizarCurvasTransiciones);
-                    break;
-                }
-            }
-        });
+        editorVisualAFD = new EditorVisualAFD(
+                graph,
+                mapaEstados
+        );
 
         Object parent =
                 graph.getDefaultParent();
 
         graphComponent =
                 new mxGraphComponent(graph);
+        
+        animadorSimulacion = new AnimadorSimulacion(
+                graph,
+                graphComponent,
+                mapaEstados,
+                mapaTransiciones
+        );
         
         // Ocultar los botones + y - de los estados
         graphComponent.setFoldingEnabled(false);
@@ -430,6 +363,255 @@ public class MainFrame extends JFrame {
                 BorderLayout.CENTER
         );
 
+        
+        // EVENTOS DEL LIENZO
+        
+
+        graphComponent
+                .getGraphControl()
+                .addMouseListener(
+                        new MouseAdapter() {
+
+                    @Override
+                    public void mousePressed(
+                            MouseEvent e) {
+
+                        // -------------------------------------------------
+                        // MODO AGREGAR ESTADO
+                        // -------------------------------------------------
+
+                        if (modoAgregarEstado) {
+
+                            crearEstadoEnPosicion(
+                                    e.getX(),
+                                    e.getY(),
+                                    parent
+                            );
+
+                            return;
+                        }
+
+                        
+                        // MODO CREAR TRANSICIÓN
+                        
+
+                        if (modoCrearTransicion) {
+
+                            procesarClickTransicion(e);
+
+                            return;
+                        }
+                    }
+                }
+        );
+
+        // =========================================================
+        // SINCRONIZAR POSICIÓN DE LOS ESTADOS
+        // =========================================================
+
+        graphComponent
+                .getGraphControl()
+                .addMouseListener(
+                        new MouseAdapter() {
+
+                    @Override
+                    public void mouseReleased(
+                            MouseEvent e) {
+
+                        sincronizarPosicionEstado();
+                    }
+                }
+        );
+
+        
+        // PANEL DE SIMULACIÓN
+        configurarPanelSimulacion();
+
+        // ESTILO GENERAL DE LA VENTANA
+
+        getContentPane().setBackground(
+                new Color(245, 240, 255)
+        );
+
+        // PANEL DE HERRAMIENTAS
+        panelHerramientas.setBackground(
+                new Color(250, 247, 255)
+        );
+
+        panelHerramientas.setPreferredSize(
+                new Dimension(205, 0)
+        );
+
+        panelHerramientas.setBorder(
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createTitledBorder(
+                                BorderFactory.createLineBorder(
+                                        new Color(196, 173, 255),
+                                        2, true
+                                ),
+                                "Herramientas",
+                                0, 0,
+                                new Font("Segoe UI", Font.BOLD, 13),
+                                new Color(88, 60, 150)
+                        ),
+                        BorderFactory.createEmptyBorder(
+                                10, 10, 10, 10
+                        )
+                )
+        );
+
+        // PANEL DEL LIENZO
+        panelLienzo.setBackground(Color.WHITE);
+
+        panelLienzo.setBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(
+                                new Color(196, 173, 255),
+                                2, true
+                        ),
+                        "Lienzo del Autómata",
+                        0, 0,
+                        new Font("Segoe UI", Font.BOLD, 13),
+                        new Color(88, 60, 150)
+                )
+        );
+
+        // PANEL DE SIMULACIÓN
+        panelSimulacion.setBackground(
+                new Color(250, 247, 255)
+        );
+
+        panelSimulacion.setBorder(
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createTitledBorder(
+                                BorderFactory.createLineBorder(
+                                        new Color(196, 173, 255),
+                                        2, true
+                                ),
+                                "Simulación",
+                                0, 0,
+                                new Font("Segoe UI", Font.BOLD, 13),
+                                new Color(88, 60, 150)
+                        ),
+                        BorderFactory.createEmptyBorder(
+                                6, 10, 8, 10
+                        )
+                )
+        );
+
+
+
+        // AGREGAR PANELES A LA VENTANA
+        
+
+        add(
+                panelHerramientas,
+                BorderLayout.WEST
+        );
+
+        add(
+                panelLienzo,
+                BorderLayout.CENTER
+        );
+
+        add(
+                panelSimulacion,
+                BorderLayout.SOUTH
+        );
+    }
+    
+    
+    /**
+    * Inserta visualmente un estado en el lienzo.
+    * Se utiliza tanto al crear como al importar.
+    */
+   private Object insertarEstadoEnLienzo(
+           Object parent,
+           Estado estado,
+           int x,
+           int y) {
+
+       return graph.insertVertex(
+               parent,
+               null,
+               estado.getNombre(),
+               x,
+               y,
+               TAMANO_ESTADO,
+               TAMANO_ESTADO,
+               ESTILO_ESTADO
+       );
+   }
+    
+    
+   
+   
+    private void configurarPanelHerramientas() {
+
+        panelHerramientas = new JPanel();
+
+        panelHerramientas.setPreferredSize(
+                new Dimension(180, 0)
+        );
+
+        panelHerramientas.setBorder(
+                BorderFactory.createTitledBorder(
+                        "Herramientas"
+                )
+        );
+
+        panelHerramientas.setLayout(
+                new GridLayout(9, 1, 5, 5)
+        );
+
+        JButton btnAgregarEstado =
+                new JButton("Agregar Estado");
+
+        JButton btnTransicion =
+                new JButton("Crear Transición");
+
+        JButton btnInicial =
+                new JButton("Estado Inicial");
+
+        JButton btnAceptacion =
+                new JButton("Estado Aceptación");
+
+        JButton btnEliminar =
+                new JButton("Eliminar");
+
+       
+        JButton btnRenombrar =
+                new JButton("Renombrar Estado");
+        
+        JButton btnEditarTransicion =
+                new JButton("Editar Transición");
+        
+        JButton btnImportar =
+                new JButton("Importar Autómata");
+
+        JButton btnExportar =
+                new JButton("Exportar Autómata");
+
+        panelHerramientas.add(btnAgregarEstado);
+        panelHerramientas.add(btnTransicion);
+        panelHerramientas.add(btnInicial);
+        panelHerramientas.add(btnAceptacion);
+        panelHerramientas.add(btnEliminar);
+        panelHerramientas.add(btnRenombrar);
+        panelHerramientas.add(btnEditarTransicion);
+        panelHerramientas.add(btnImportar);
+        panelHerramientas.add(btnExportar);
+        
+        
+        estilizarBotones(panelHerramientas);
+
+        // Destacar Importar y Exportar
+        btnImportar.setBackground(new java.awt.Color(197, 215, 255));
+        btnExportar.setBackground(new java.awt.Color(255, 205, 230));
+
+        panelHerramientas.setBackground(
+                new java.awt.Color(250, 247, 255)
+        );
         
         // BOTÓN AGREGAR ESTADO
         
@@ -526,71 +708,17 @@ public class MainFrame extends JFrame {
                 importarAutomataDesdeArchivo()
         );
         
-        // EVENTOS DEL LIENZO
-        
 
-        graphComponent
-                .getGraphControl()
-                .addMouseListener(
-                        new MouseAdapter() {
-
-                    @Override
-                    public void mousePressed(
-                            MouseEvent e) {
-
-                        // -------------------------------------------------
-                        // MODO AGREGAR ESTADO
-                        // -------------------------------------------------
-
-                        if (modoAgregarEstado) {
-
-                            crearEstadoEnPosicion(
-                                    e.getX(),
-                                    e.getY(),
-                                    parent
-                            );
-
-                            return;
-                        }
-
-                        
-                        // MODO CREAR TRANSICIÓN
-                        
-
-                        if (modoCrearTransicion) {
-
-                            procesarClickTransicion(e);
-
-                            return;
-                        }
-                    }
-                }
-        );
-
-        // =========================================================
-        // SINCRONIZAR POSICIÓN DE LOS ESTADOS
-        // =========================================================
-
-        graphComponent
-                .getGraphControl()
-                .addMouseListener(
-                        new MouseAdapter() {
-
-                    @Override
-                    public void mouseReleased(
-                            MouseEvent e) {
-
-                        sincronizarPosicionEstado();
-                    }
-                }
-        );
-
-        
-        // PANEL DE SIMULACIÓN
-        
+    }
+    
+    /**
+    * Configura el panel de simulación y sus botones.
+    */
+    private void configurarPanelSimulacion() {
 
         panelSimulacion = new JPanel();
 
+        
         panelSimulacion.setBorder(
                 BorderFactory.createTitledBorder(
                         "Simulación"
@@ -744,102 +872,9 @@ public class MainFrame extends JFrame {
         btnReiniciar.addActionListener(e -> {
             reiniciarSimulacion();
         });
-        
 
-
-        // ESTILO GENERAL DE LA VENTANA
-
-        getContentPane().setBackground(
-                new Color(245, 240, 255)
-        );
-
-        // PANEL DE HERRAMIENTAS
-        panelHerramientas.setBackground(
-                new Color(250, 247, 255)
-        );
-
-        panelHerramientas.setPreferredSize(
-                new Dimension(205, 0)
-        );
-
-        panelHerramientas.setBorder(
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createTitledBorder(
-                                BorderFactory.createLineBorder(
-                                        new Color(196, 173, 255),
-                                        2, true
-                                ),
-                                "Herramientas",
-                                0, 0,
-                                new Font("Segoe UI", Font.BOLD, 13),
-                                new Color(88, 60, 150)
-                        ),
-                        BorderFactory.createEmptyBorder(
-                                10, 10, 10, 10
-                        )
-                )
-        );
-
-        // PANEL DEL LIENZO
-        panelLienzo.setBackground(Color.WHITE);
-
-        panelLienzo.setBorder(
-                BorderFactory.createTitledBorder(
-                        BorderFactory.createLineBorder(
-                                new Color(196, 173, 255),
-                                2, true
-                        ),
-                        "Lienzo del Autómata",
-                        0, 0,
-                        new Font("Segoe UI", Font.BOLD, 13),
-                        new Color(88, 60, 150)
-                )
-        );
-
-        // PANEL DE SIMULACIÓN
-        panelSimulacion.setBackground(
-                new Color(250, 247, 255)
-        );
-
-        panelSimulacion.setBorder(
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createTitledBorder(
-                                BorderFactory.createLineBorder(
-                                        new Color(196, 173, 255),
-                                        2, true
-                                ),
-                                "Simulación",
-                                0, 0,
-                                new Font("Segoe UI", Font.BOLD, 13),
-                                new Color(88, 60, 150)
-                        ),
-                        BorderFactory.createEmptyBorder(
-                                6, 10, 8, 10
-                        )
-                )
-        );
-
-
-
-        // AGREGAR PANELES A LA VENTANA
-        
-
-        add(
-                panelHerramientas,
-                BorderLayout.WEST
-        );
-
-        add(
-                panelLienzo,
-                BorderLayout.CENTER
-        );
-
-        add(
-                panelSimulacion,
-                BorderLayout.SOUTH
-        );
     }
-
+   
     // =============================================================
     // CREAR ESTADO
     // =============================================================
@@ -863,23 +898,12 @@ public class MainFrame extends JFrame {
 
         try {
 
-            Object celda =
-        graph.insertVertex(
-                parent,
-                null,
-                estado.getNombre(),
-                x - 40,
-                y - 40,
-                80,
-                80,
-                "shape=ellipse;"
-                + "fillColor=#FFFFFF;"
-                + "strokeColor=#000000;"
-                + "strokeWidth=2;"
-                + "fontSize=16;"
-                + "align=center;"
-                + "verticalAlign=middle;"
-        );
+            Object celda = insertarEstadoEnLienzo(
+                    parent,
+                    estado,
+                    x - 40,
+                    y - 40
+            );
 
             mapaEstados.put(
                     celda,
@@ -1011,50 +1035,13 @@ public class MainFrame extends JFrame {
                             celdaDestino
                     );
             
-            
+
             // Configurar los bucles del mismo estado
             if (celdaOrigenTransicion == celdaDestino) {
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_ROUNDED,
-                        "1",
-                        new Object[]{celdaTransicion}
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_LOOP,
-                        "loopEdgeStyle",
-                        new Object[]{celdaTransicion}
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_DIRECTION,
-                        mxConstants.DIRECTION_NORTH,
-                        new Object[]{celdaTransicion}
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_SEGMENT,
-                        "30",
-                        new Object[]{celdaTransicion}
-                );
-                
-                // Dibujar el bucle como curva
-                graph.setCellStyles(
-                        mxConstants.STYLE_SHAPE,
-                        mxConstants.SHAPE_CURVE,
-                        new Object[]{celdaTransicion}
-                );
+                configurarEstiloBucle(celdaTransicion);
             }
 
-            // =====================================================
-            // IMPORTANTE:
-            //
-            // Movemos la etiqueta de la transición ligeramente
-            // hacia arriba para que no quede atravesada por la
-            // línea de la flecha.
-            // =====================================================
-
+            // Ajustar la posición de la etiqueta de transición
             mxGeometry geometriaTransicion =
                     graph.getModel()
                             .getGeometry(
@@ -1209,40 +1196,7 @@ public class MainFrame extends JFrame {
     // =============================================================
 
     private void actualizarEtiquetasEstados() {
-
-        graph.getModel().beginUpdate();
-
-        try {
-
-            for (
-                    Map.Entry<Object, Estado> entrada
-                    : mapaEstados.entrySet()
-            ) {
-
-                Object celda =
-                        entrada.getKey();
-
-                Estado estado =
-                        entrada.getValue();
-
-                String texto =
-                        estado.getNombre();
-
-                
-
-                // Estado de aceptación
-                
-
-                graph.getModel().setValue(
-                        celda,
-                        texto
-                );
-            }
-
-        } finally {
-
-            graph.getModel().endUpdate();
-        }
+        editorVisualAFD.actualizarEtiquetasEstados();
     }
 
     
@@ -1292,47 +1246,9 @@ private void actualizarFlechaInicial(Object celdaEstado) {
     
     // ACTUALIZAR ESTILO DE LOS ESTADOS
 
-private void actualizarEstiloEstados() {
-
-    graph.getModel().beginUpdate();
-
-    try {
-        for (Map.Entry<Object, Estado> entrada
-                : mapaEstados.entrySet()) {
-
-            Object celda = entrada.getKey();
-            Estado estado = entrada.getValue();
-
-            if (estado.isAceptacion()) {
-
-                // Estado final: doble círculo
-                graph.setCellStyles(
-                        mxConstants.STYLE_SHAPE,
-                        mxConstants.SHAPE_DOUBLE_ELLIPSE,
-                        new Object[]{celda}
-                );
-
-            } else {
-
-                // Estado normal: un círculo
-                graph.setCellStyles(
-                        mxConstants.STYLE_SHAPE,
-                        mxConstants.SHAPE_ELLIPSE,
-                        new Object[]{celda}
-                );
-            }
-
-            graph.setCellStyles(
-                    mxConstants.STYLE_STROKEWIDTH,
-                    "2",
-                    new Object[]{celda}
-            );
-        }
-
-    } finally {
-        graph.getModel().endUpdate();
+    private void actualizarEstiloEstados() {
+        editorVisualAFD.actualizarEstiloEstados();
     }
-}
 
 
     
@@ -1446,36 +1362,7 @@ private void actualizarEstiloEstados() {
     // =============================================================
 
     private void sincronizarPosicionEstado() {
-
-        Object celda =
-                graph.getSelectionCell();
-
-        if (celda == null) {
-            return;
-        }
-
-        Estado estado =
-                mapaEstados.get(celda);
-
-        if (estado == null) {
-            return;
-        }
-
-        mxGeometry geometria =
-                graph.getModel()
-                        .getGeometry(celda);
-
-        if (geometria == null) {
-            return;
-        }
-
-        estado.setX(
-                (int) geometria.getX()
-        );
-
-        estado.setY(
-                (int) geometria.getY()
-        );
+        editorVisualAFD.sincronizarPosicionEstado();
     }
 
     
@@ -1483,133 +1370,46 @@ private void actualizarEstiloEstados() {
    
 
     
+    
     private void iniciarSimulacion() {
 
-        if (timerSimulacion != null) {
-            timerSimulacion.stop();
-        }
+        animadorSimulacion.detener();
 
         restaurarColoresSimulacion();
 
         if (automata.getEstadoInicial() == null) {
+
             JOptionPane.showMessageDialog(
                     this,
                     "Primero debes establecer un estado inicial."
             );
+
             return;
         }
 
-        SimuladorAFD simulador = new SimuladorAFD(automata);
+        SimuladorAFD simulador =
+                new SimuladorAFD(automata);
 
-        resultadoSimulacionActual =
+        ResultadoSimulacion resultado =
                 simulador.simular(campoCadena.getText());
-
-        indicePasoSimulacion = 1;
 
         etiquetaResultado.setText("Resultado: Simulando...");
 
-        seleccionarEstadoVisual(automata.getEstadoInicial());
+        animadorSimulacion.reproducir(
+                resultado,
+                automata.getEstadoInicial(),
 
-        if (resultadoSimulacionActual.getPasos().size() <= 1) {
-            finalizarSimulacion();
-            return;
-        }
+                r -> etiquetaResultado.setText(
+                        "Resultado: " + r.getEstadoResultado()
+                ),
 
-        timerSimulacion = new Timer(
-                800,
-                e -> ejecutarPasoSimulacion()
+                mensaje -> JOptionPane.showMessageDialog(
+                        this,
+                        mensaje,
+                        "Validación de cadena",
+                        JOptionPane.WARNING_MESSAGE
+                )
         );
-
-        timerSimulacion.start();
-    }
-
-    
-    // EJECUTAR PASO DE SIMULACIÓN
-    
-
-
-    private void ejecutarPasoSimulacion() {
-
-        if (resultadoSimulacionActual == null) {
-            return;
-        }
-
-        if (indicePasoSimulacion >=
-                resultadoSimulacionActual.getPasos().size()) {
-            finalizarSimulacion();
-            return;
-        }
-
-        PasoSimulacion paso =
-                resultadoSimulacionActual.getPasos()
-                        .get(indicePasoSimulacion);
-
-        indicePasoSimulacion++;
-
-        if (paso.tieneError()) {
-            finalizarSimulacion();
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    paso.getMensaje(),
-                    "Validación de cadena",
-                    JOptionPane.WARNING_MESSAGE
-            );
-            return;
-        }
-
-        seleccionarPasoVisual(
-                paso.getEstadoOrigen(),
-                paso.getEstadoDestino(),
-                paso.getSimboloLeido()
-        );
-
-        if (indicePasoSimulacion >=
-                resultadoSimulacionActual.getPasos().size()) {
-            finalizarSimulacion();
-        }
-    }
-
-    // FINALIZAR SIMULACIÓN
-
-    private void finalizarSimulacion() {
-
-        if (timerSimulacion != null) {
-            timerSimulacion.stop();
-        }
-
-        if (resultadoSimulacionActual == null) {
-            return;
-        }
-
-        etiquetaResultado.setText(
-                "Resultado: "
-                + resultadoSimulacionActual.getEstadoResultado()
-        );
-    }
-
-    // SELECCIONAR ESTADO VISUALMENTE
-
-    private void seleccionarEstadoVisual(
-            Estado estado) {
-
-        for (
-                Map.Entry<Object, Estado> entrada
-                : mapaEstados.entrySet()
-        ) {
-
-            if (
-                    entrada.getValue()
-                    == estado
-            ) {
-
-                graph.setSelectionCell(
-                        entrada.getKey()
-                );
-
-                return;
-            }
-        }
     }
 
     // LIMPIAR MODO TRANSICIÓN
@@ -1768,18 +1568,13 @@ private void actualizarEstiloEstados() {
     
    private void reiniciarSimulacion() {
 
-        if (timerSimulacion != null) {
-            timerSimulacion.stop();
-            timerSimulacion = null;
-        }
-
-        resultadoSimulacionActual = null;
-        indicePasoSimulacion = 0;
+        animadorSimulacion.detener();
 
         campoCadena.setText("");
         etiquetaResultado.setText("Resultado: ---");
 
         restaurarColoresSimulacion();
+
         graph.clearSelection();
         graphComponent.repaint();
     }
@@ -1787,200 +1582,13 @@ private void actualizarEstiloEstados() {
     //SEPARAR TRANSICIONES
     
     private void actualizarCurvasTransiciones() {
-        Object[] aristas = graph.getChildEdges(graph.getDefaultParent());
-
-        graph.getModel().beginUpdate();
-        try {
-            for (Object arista : aristas) {
-                Object origen = graph.getModel().getTerminal(arista, true);
-                Object destino = graph.getModel().getTerminal(arista, false);
-
-                if (origen == null || destino == null || origen == destino) {
-                    continue;
-                }
-
-                boolean tieneOpuesta = false;
-                for (Object otra : aristas) {
-                    if (otra != arista
-                            && graph.getModel().getTerminal(otra, true) == destino
-                            && graph.getModel().getTerminal(otra, false) == origen) {
-                        tieneOpuesta = true;
-                        break;
-                    }
-                }
-
-                mxGeometry anterior = graph.getModel().getGeometry(arista);
-                if (anterior == null) continue;
-                mxGeometry nueva = (mxGeometry) anterior.clone();
-
-                if (tieneOpuesta) {
-                    mxGeometry g1 = graph.getModel().getGeometry(origen);
-                    mxGeometry g2 = graph.getModel().getGeometry(destino);
-                    if (g1 == null || g2 == null) continue;
-
-                    double x1 = g1.getX() + g1.getWidth() / 2;
-                    double y1 = g1.getY() + g1.getHeight() / 2;
-                    double x2 = g2.getX() + g2.getWidth() / 2;
-                    double y2 = g2.getY() + g2.getHeight() / 2;
-                    double dx = x2 - x1;
-                    double dy = y2 - y1;
-                    double distancia = Math.hypot(dx, dy);
-                    if (distancia < 1) continue;
-
-                    double separacion = 28;
-                    double puntoX = (x1 + x2) / 2
-                            - dy / distancia * separacion;
-                    double puntoY = (y1 + y2) / 2
-                            + dx / distancia * separacion;
-
-                    java.util.List<mxPoint> puntos = new java.util.ArrayList<>();
-                    puntos.add(new mxPoint(puntoX, puntoY));
-                    nueva.setPoints(puntos);
-                } else {
-                    // Al eliminar la flecha opuesta, volver a una línea normal.
-                    nueva.setPoints(null);
-                }
-
-                graph.getModel().setGeometry(arista, nueva);
-                graph.setCellStyles(
-                        mxConstants.STYLE_SHAPE,
-                        tieneOpuesta ? mxConstants.SHAPE_CURVE
-                                : mxConstants.SHAPE_CONNECTOR,
-                        new Object[]{arista}
-                );
-                graph.setCellStyles(
-                        mxConstants.STYLE_MOVABLE,
-                        "0",
-                        new Object[]{arista}
-                );
-            }
-        } finally {
-            graph.getModel().endUpdate();
-        }
+        GeometriaTransicionesAFD.actualizarCurvasTransiciones(graph);
     }
 
-    //Recorrido
-    
-    
-    private void seleccionarPasoVisual(
-            Estado origen,
-            Estado destino,
-            String simbolo) {
 
-        // Restaurar los colores del paso anterior
-        restaurarColoresSimulacion();
-
-        Object celdaDestino = null;
-        Object celdaTransicion = null;
-
-        // Buscar el estado de destino
-        for (Map.Entry<Object, Estado> entrada
-                : mapaEstados.entrySet()) {
-
-            if (entrada.getValue() == destino) {
-                celdaDestino = entrada.getKey();
-                break;
-            }
-        }
-
-        // Buscar la transición utilizada
-        for (Map.Entry<Object, Transicion> entrada
-                : mapaTransiciones.entrySet()) {
-
-            Transicion t = entrada.getValue();
-
-            if (t.getOrigen() == origen
-                    && t.getDestino() == destino
-                    && t.getSimbolo().equals(simbolo)) {
-
-                celdaTransicion = entrada.getKey();
-                break;
-            }
-        }
-
-        graph.getModel().beginUpdate();
-
-        try {
-            // COLOR VERDE PARA EL ESTADO ACTUAL
-            if (celdaDestino != null) {
-
-                estilosResaltados.put(
-                        celdaDestino,
-                        graph.getModel().getStyle(celdaDestino)
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_FILLCOLOR,
-                        "#BFDBFE",
-                        new Object[]{celdaDestino}
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_STROKECOLOR,
-                        "#2563EB",
-                        new Object[]{celdaDestino}
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_STROKEWIDTH,
-                        "4",
-                        new Object[]{celdaDestino}
-                );
-            }
-
-            // COLOR NARANJA PARA LA TRANSICIÓN
-            if (celdaTransicion != null) {
-
-                estilosResaltados.put(
-                        celdaTransicion,
-                        graph.getModel().getStyle(celdaTransicion)
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_STROKECOLOR,
-                        "#8B5CF6",
-                        new Object[]{celdaTransicion}
-                );
-
-                graph.setCellStyles(
-                        mxConstants.STYLE_STROKEWIDTH,
-                        "4",
-                        new Object[]{celdaTransicion}
-                );
-            }
-
-        } finally {
-            graph.getModel().endUpdate();
-        }
-
-        graph.clearSelection();
-        graphComponent.repaint();
-    }
-
-    
     // COLOR EN SIMULACION
     private void restaurarColoresSimulacion() {
-
-        graph.getModel().beginUpdate();
-
-        try {
-            for (Map.Entry<Object, String> entrada
-                    : estilosResaltados.entrySet()) {
-
-                Object celda = entrada.getKey();
-
-                if (graph.getModel().getParent(celda) != null) {
-                    graph.getModel().setStyle(
-                            celda, entrada.getValue()
-                    );
-                }
-            }
-
-            estilosResaltados.clear();
-
-        } finally {
-            graph.getModel().endUpdate();
-        }
+        animadorSimulacion.restaurarColores();
     }
 
     
@@ -2081,14 +1689,10 @@ private void actualizarEstiloEstados() {
                 }
             }
 
-            String json = AutomataJson.exportar(
-                    automata, posiciones
-            );
-
-            Files.writeString(
+            AutomataJson.guardarEnArchivo(
                     archivo.toPath(),
-                    json,
-                    StandardCharsets.UTF_8
+                    automata,
+                    posiciones
             );
 
             mostrarAviso("Autómata exportado correctamente.");
@@ -2106,13 +1710,8 @@ private void actualizarEstiloEstados() {
 
     
     //MOSTRAR MENSAJES
-   private void mostrarAviso(String mensaje) {
-
-        areaMensajes.append("• " + mensaje + "\n");
-
-        areaMensajes.setCaretPosition(
-                areaMensajes.getDocument().getLength()
-        );
+    private void mostrarAviso(String mensaje) {
+        scrollMensajes.agregarMensaje(mensaje);
     }
     
     
@@ -2138,19 +1737,9 @@ private void actualizarEstiloEstados() {
             java.nio.file.Path archivo =
                     selector.getSelectedFile().toPath();
 
-            if (Files.size(archivo) > 2_000_000) {
-                throw new IllegalArgumentException(
-                        "El archivo supera el límite de 2 MB."
-                );
-            }
-
-            String json = Files.readString(
-                    archivo, StandardCharsets.UTF_8
-            );
-
-            // Validar antes de reemplazar el autómata actual
+            // Leer y validar antes de reemplazar el autómata
             AutomataJson.Datos datos =
-                    AutomataJson.importar(json);
+                    AutomataJson.leerDesdeArchivo(archivo);
 
             if (!automata.getEstados().isEmpty()) {
 
@@ -2185,62 +1774,19 @@ private void actualizarEstiloEstados() {
 
     
     //RECONSTRUIR AUTOMATA
-    
-    
+     
     private void cargarAutomataImportado(
             AutomataJson.Datos datos) {
 
-        // Primero reconstruir el modelo completo
+        // Reconstruir el modelo utilizando la clase especializada.
+        RestauradorModeloAFD.Resultado resultado =
+                RestauradorModeloAFD.reconstruir(datos);
+
         AutomataController nuevoController =
-                new AutomataController();
+                resultado.controller();
 
         Map<String, Estado> nuevosEstados =
-                new java.util.LinkedHashMap<>();
-
-        for (AutomataJson.EstadoDato dato : datos.estados) {
-
-            Estado estado = nuevoController.crearEstado(
-                    dato.nombre, dato.x, dato.y
-            );
-
-            nuevosEstados.put(dato.nombre, estado);
-
-            if (dato.aceptacion) {
-                nuevoController.establecerEstadoAceptacion(
-                        estado
-                );
-            }
-        }
-
-        if (datos.inicial != null) {
-
-            Estado inicial = nuevosEstados.get(datos.inicial);
-
-            if (inicial == null) {
-                throw new IllegalArgumentException(
-                        "No se encontró el estado inicial."
-                );
-            }
-
-            nuevoController.establecerEstadoInicial(inicial);
-        }
-
-        for (AutomataJson.TransicionDato dato
-                : datos.transiciones) {
-
-            Estado origen = nuevosEstados.get(dato.origen);
-            Estado destino = nuevosEstados.get(dato.destino);
-
-            if (origen == null || destino == null) {
-                throw new IllegalArgumentException(
-                        "Una transición contiene estados inexistentes."
-                );
-            }
-
-            nuevoController.crearTransicion(
-                    origen, destino, dato.simbolo
-            );
-        }
+                resultado.estados();
 
         // Detener cualquier simulación anterior
         reiniciarSimulacion();
@@ -2248,7 +1794,7 @@ private void actualizarEstiloEstados() {
         modoAgregarEstado = false;
         limpiarModoTransicion();
         marcadorEstadoInicial = null;
-        estilosResaltados.clear();
+        animadorSimulacion.limpiarResaltados();
 
         graph.getModel().beginUpdate();
 
@@ -2274,21 +1820,11 @@ private void actualizarEstiloEstados() {
 
                 Estado estado = nuevosEstados.get(dato.nombre);
 
-                Object celda = graph.insertVertex(
+                Object celda = insertarEstadoEnLienzo(
                         parent,
-                        null,
-                        estado.getNombre(),
+                        estado,
                         dato.x,
-                        dato.y,
-                        80,
-                        80,
-                        "shape=ellipse;"
-                        + "fillColor=#FFFFFF;"
-                        + "strokeColor=#000000;"
-                        + "strokeWidth=2;"
-                        + "fontSize=16;"
-                        + "align=center;"
-                        + "verticalAlign=middle;"
+                        dato.y
                 );
 
                 mapaEstados.put(celda, estado);
@@ -2306,6 +1842,11 @@ private void actualizarEstiloEstados() {
                         celdas.get(transicion.getOrigen()),
                         celdas.get(transicion.getDestino())
                 );
+                
+                // Recuperar el estilo de los bucles
+                if (transicion.getOrigen() == transicion.getDestino()) {
+                    configurarEstiloBucle(celda);
+                }
 
                 mxGeometry geometria =
                         graph.getModel().getGeometry(celda);
@@ -2368,56 +1909,51 @@ private void actualizarEstiloEstados() {
         graphComponent.refresh();
         graphComponent.repaint();
     }
-    
+      
+     // Aplica el estilo visual a una transición que regresa al mismo estado.
 
-    private void estilizarBotones(JPanel panel) {
+    private void configurarEstiloBucle(Object celda) {
 
-        for (java.awt.Component componente :
-                panel.getComponents()) {
+        Object[] celdas = {celda};
 
-            if (componente instanceof JButton) {
+        graph.setCellStyles(
+                mxConstants.STYLE_ROUNDED,
+                "1",
+                celdas
+        );
 
-                JButton boton = (JButton) componente;
+        graph.setCellStyles(
+                mxConstants.STYLE_LOOP,
+                "loopEdgeStyle",
+                celdas
+        );
 
-                boton.setFont(new java.awt.Font(
-                        "Segoe UI",
-                        java.awt.Font.BOLD,
-                        12
-                ));
+        graph.setCellStyles(
+                mxConstants.STYLE_DIRECTION,
+                mxConstants.DIRECTION_NORTH,
+                celdas
+        );
 
-                boton.setBackground(
-                        new java.awt.Color(224, 210, 255)
-                );
+        graph.setCellStyles(
+                mxConstants.STYLE_SEGMENT,
+                "30",
+                celdas
+        );
 
-                boton.setForeground(
-                        new java.awt.Color(65, 42, 115)
-                );
+        graph.setCellStyles(
+                mxConstants.STYLE_SHAPE,
+                "curvaAFD",
+                celdas
+        );
 
-                boton.setFocusPainted(false);
-                boton.setContentAreaFilled(true);
-                boton.setOpaque(true);
-
-                boton.setBorder(
-                        BorderFactory.createCompoundBorder(
-                                BorderFactory.createLineBorder(
-                                        new java.awt.Color(
-                                                189, 165, 235
-                                        ),
-                                        1,
-                                        true
-                                ),
-                                BorderFactory.createEmptyBorder(
-                                        8, 8, 8, 8
-                                )
-                        )
-                );
-
-                boton.setCursor(
-                        new Cursor(Cursor.HAND_CURSOR)
-                );
-            }
-        }
+        graph.setCellStyles(
+                mxConstants.STYLE_ENDSIZE,
+                "8",
+                celdas
+        );
     }
 
-
+    private void estilizarBotones(JPanel panel) {
+        EstilosUI.estilizarBotonesPanel(panel);
+    }
 }

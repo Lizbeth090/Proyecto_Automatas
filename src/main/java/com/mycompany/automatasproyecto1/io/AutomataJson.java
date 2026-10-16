@@ -8,6 +8,11 @@ import com.mycompany.automatasproyecto1.model.*;
 import java.awt.Point;
 import java.util.*;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 public final class AutomataJson {
 
     private static final Gson gson =
@@ -167,4 +172,43 @@ public final class AutomataJson {
 
         return datos;
     }
+    
+    
+    /**
+     * Guarda el automata en un archivo JSON.
+     */
+    public static void guardarEnArchivo(
+            Path archivo,
+            Automata automata,
+            Map<Estado, Point> posiciones) throws IOException {
+
+        String json = exportar(automata, posiciones);
+
+        Files.writeString(
+                archivo,
+                json,
+                StandardCharsets.UTF_8
+        );
+    }
+
+    /**
+     * Lee y valida un automata desde un archivo JSON.
+     */
+    public static Datos leerDesdeArchivo(
+            Path archivo) throws IOException {
+
+        if (Files.size(archivo) > 2_000_000) {
+            throw new IllegalArgumentException(
+                    "El archivo supera el limite de 2 MB."
+            );
+        }
+
+        String json = Files.readString(
+                archivo,
+                StandardCharsets.UTF_8
+        );
+
+        return importar(json);
+    }
+
 }

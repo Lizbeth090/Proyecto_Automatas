@@ -3,11 +3,11 @@ package com.mycompany.automatasproyecto1.view;
 import com.mycompany.automatasproyecto1.conversion.PasoConversion;
 import com.mycompany.automatasproyecto1.conversion.ResultadoConversion;
 import com.mycompany.automatasproyecto1.conversion.NormalizadorAutomata;
+import com.mycompany.automatasproyecto1.view.components.EstilosUI;
+import com.mycompany.automatasproyecto1.view.graph.ConstructorGrafoRegex;
 
-import com.mxgraph.model.mxGeometry;
 import com.mxgraph.view.mxGraph;
 import com.mxgraph.swing.mxGraphComponent;
-import com.mxgraph.util.mxPoint;
 import com.mxgraph.util.mxRectangle;
 import com.mxgraph.util.mxConstants;
 
@@ -17,8 +17,6 @@ import javax.swing.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.HashMap;
-import java.util.Map;
 
 public class VentanaConversionRegex extends JFrame {
 
@@ -675,9 +673,15 @@ public class VentanaConversionRegex extends JFrame {
                 + " - " + paso.titulo
         );
 
-        areaDescripcion.setText(paso.descripcion);
+        areaDescripcion.setText(
+                paso.descripcion.replace("∪", "|")
+        );
+
         areaDescripcion.setCaretPosition(0);
-        campoRegex.setText(paso.regex);
+
+        campoRegex.setText(
+                paso.regex.replace("∪", "|")
+        );
 
         actualizarBotones();
         componenteVisual.repaint();
@@ -792,7 +796,7 @@ public class VentanaConversionRegex extends JFrame {
         componente.repaint();
     }
 
-    // PRUEBA INDEPENDIENTE
+    // Ejecución independiente de la ventana para pruebas
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> {
@@ -1080,7 +1084,9 @@ public class VentanaConversionRegex extends JFrame {
 
     // Mostrar la expresión regular calculada
     public void mostrarRegexFinal(String regex) {
-        campoRegex.setText(regex);
+        campoRegex.setText(
+                regex.replace("∪", "|")
+        );
     }
 
     public void cargarResultadoConversion(
@@ -1090,7 +1096,8 @@ public class VentanaConversionRegex extends JFrame {
 
         for (PasoConversion paso : resultado.getPasos()) {
 
-            mxGraph grafoPaso = construirGrafoPaso(paso);
+            mxGraph grafoPaso =
+                    ConstructorGrafoRegex.construirGrafoPaso(paso);
 
             agregarPasoVisual(
                     grafoPaso,
@@ -1147,507 +1154,15 @@ public class VentanaConversionRegex extends JFrame {
 
         return descripcion.toString();
     }
-
-    
-    
-    private void dibujarBucleRedondo(
-            mxGraph grafo,
-            Object flecha,
-            Object estado) {
-
-        mxGeometry gEstado =
-                grafo.getModel().getGeometry(estado);
-
-        mxGeometry gFlecha =
-                grafo.getModel().getGeometry(flecha);
-
-        if (gEstado == null || gFlecha == null) {
-            return;
-        }
-
-        double x = gEstado.getX();
-        double y = gEstado.getY();
-        double ancho = gEstado.getWidth();
-
-        double centroX = x + ancho / 2;
-
-        // Altura del arco
-        double altura = 65;
-
-        java.util.List<mxPoint> puntos =
-                new java.util.ArrayList<>();
-
-        puntos.add(new mxPoint(
-                x - 10, y - altura * 0.65
-        ));
-
-        puntos.add(new mxPoint(
-                centroX, y - altura
-        ));
-
-        puntos.add(new mxPoint(
-                x + ancho + 10, y - altura * 0.65
-        ));
-
-        mxGeometry nueva =
-                (mxGeometry) gFlecha.clone();
-
-        nueva.setPoints(puntos);
-
-        grafo.getModel().setGeometry(flecha, nueva);
-
-        // Utilizar los puntos propios en vez del
-        // recorrido automático para bucles
-        grafo.setCellStyles(
-                mxConstants.STYLE_LOOP,
-                "none",
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_SHAPE,
-                mxConstants.SHAPE_CURVE,
-                new Object[]{flecha}
-        );
-
-        // Salida por la parte superior izquierda
-        grafo.setCellStyles(
-                mxConstants.STYLE_EXIT_X,
-                "0.25",
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_EXIT_Y,
-                "0.067",
-                new Object[]{flecha}
-        );
-
-        // Llegada por la parte superior derecha
-        grafo.setCellStyles(
-                mxConstants.STYLE_ENTRY_X,
-                "0.75",
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_ENTRY_Y,
-                "0.067",
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_EXIT_PERIMETER,
-                "0",
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_ENTRY_PERIMETER,
-                "0",
-                new Object[]{flecha}
-        );
-    }
-
-    
-    
-    private void separarFlecha(
-            mxGraph grafo,
-            Object flecha,
-            Object origen,
-            Object destino,
-            int[] carriles) {
-
-        // Los bucles se dejan con su forma original
-        if (origen == destino) {
-            return;
-        }
-
-        mxGeometry gOrigen =
-                grafo.getModel().getGeometry(origen);
-
-        mxGeometry gDestino =
-                grafo.getModel().getGeometry(destino);
-
-        if (gOrigen == null || gDestino == null) {
-            return;
-        }
-
-        double x1 = gOrigen.getX()
-                + gOrigen.getWidth() / 2;
-
-        double y1 = gOrigen.getY()
-                + gOrigen.getHeight() / 2;
-
-        double x2 = gDestino.getX()
-                + gDestino.getWidth() / 2;
-
-        double y2 = gDestino.getY()
-                + gDestino.getHeight() / 2;
-
-        // Por ahora, solo reorganizar las flechas
-        // cuyos estados están en la misma fila
-        if (Math.abs(y1 - y2) > 10) {
-            return;
-        }
-
-        boolean retrocede = x2 < x1;
-        boolean saltaEstados = Math.abs(x2 - x1) > 250;
-
-        // Las flechas cortas hacia adelante quedan rectas
-        if (!retrocede && !saltaEstados) {
-            return;
-        }
-
-        // Flechas largas por arriba;
-        // flechas que retroceden por abajo
-        // Asignar una altura distinta a cada flecha
-        int carril;
-
-        if (retrocede) {
-            carril = carriles[1]++;
-        } else {
-            carril = carriles[0]++;
-        }
-
-        double distancia = 115 + (carril * 55);
-
-        double altura = retrocede
-                ? Math.max(y1, y2) + distancia
-                : Math.min(y1, y2) - distancia;
-
-        // Separar los puntos donde salen y llegan
-        // las distintas flechas
-        double[] posiciones = {
-            0.28, 0.72, 0.42, 0.58, 0.50
-        };
-
-        double ancla = posiciones[
-                carril % posiciones.length
-        ];
-
-        double xSalida =
-                gOrigen.getX()
-                + gOrigen.getWidth() * ancla;
-
-        double xLlegada =
-                gDestino.getX()
-                + gDestino.getWidth() * ancla;
-
-        java.util.List<mxPoint> puntos =
-                new java.util.ArrayList<>();
-
-        puntos.add(new mxPoint(xSalida, altura));
-        puntos.add(new mxPoint(xLlegada, altura));
-
-        mxGeometry geometria =
-                (mxGeometry) grafo.getModel()
-                        .getGeometry(flecha).clone();
-
-        geometria.setPoints(puntos);
-
-        grafo.getModel().setGeometry(
-                flecha, geometria
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_EDGE,
-                "segmentEdgeStyle",
-                new Object[]{flecha}
-        );
-        
-        // Conectar las rutas curvas desde arriba o abajo
-        String posicionY = retrocede ? "1" : "0";
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_EXIT_X,
-                String.valueOf(ancla),
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_EXIT_Y,
-                posicionY,
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_ENTRY_X,
-                String.valueOf(ancla),
-                new Object[]{flecha}
-        );
-
-        grafo.setCellStyles(
-                mxConstants.STYLE_ENTRY_Y,
-                posicionY,
-                new Object[]{flecha}
-        );
-    }
-
-    
-    
-    // Construir el grafo de cada paso de conversión
-    private mxGraph construirGrafoPaso(PasoConversion paso) {
-
-        mxGraph grafo = new mxGraph();
-        grafo.setConstrainChildren(false);
-        grafo.setCellsMovable(false);
-        grafo.setCellsResizable(false);
-        grafo.setCellsEditable(false);
-        grafo.setCellsBendable(false);
-        grafo.setAllowLoops(true);
-
-        Map<String, Object> vertices = new HashMap<>();
-        Object parent = grafo.getDefaultParent();
-
-        java.util.List<String> nombres = new ArrayList<>();
-
-        nombres.add(paso.getInicio());
-
-        for (String nombre : paso.getEstados()) {
-            if (!nombre.equals(paso.getInicio())
-                    && !nombre.equals(paso.getAceptacion())) {
-                nombres.add(nombre);
-            }
-        }
-
-        if (!nombres.contains(paso.getAceptacion())) {
-            nombres.add(paso.getAceptacion());
-        }
-
-        grafo.getModel().beginUpdate();
-
-        try {
-            for (int i = 0; i < nombres.size(); i++) {
-
-                String nombre = nombres.get(i);
-
-                int columna = i % 4;
-                int fila = i / 4;
-
-                int x = 90 + columna * 190;
-                int y = 220 + fila * 280;
-
-                boolean esFinal =
-                        nombre.equals(paso.getAceptacion());
-
-                String estilo =
-                        "shape=" + (esFinal
-                        ? mxConstants.SHAPE_DOUBLE_ELLIPSE
-                        : mxConstants.SHAPE_ELLIPSE)
-                        + ";fillColor=#FFFFFF;"
-                        + "strokeColor=#333333;"
-                        + "strokeWidth=2;"
-                        + "fontSize=15;"
-                        + "align=center;"
-                        + "verticalAlign=middle;";
-
-                Object vertice = grafo.insertVertex(
-                        parent, null, nombre,
-                        x, y, 85, 85, estilo
-                );
-
-                vertices.put(nombre, vertice);
-            }
-
-            // Indicador exterior del estado inicial
-            Object inicio = vertices.get(paso.getInicio());
-
-            if (inicio != null) {
-                grafo.insertVertex(
-                        inicio, null, "➜",
-                        -36, 32, 48, 36,
-                        "shape=label;"
-                        + "fillColor=none;"
-                        + "strokeColor=none;"
-                        + "fontSize=28;"
-                        + "movable=0;"
-                        + "editable=0;"
-                        + "selectable=0;"
-                );
-            }
-
-            // Transiciones calculadas por el algoritmo
-           
-            int numeroReferencia = 0;
-            
-            int[] carriles = {0, 0};
-            
-            // Guardar un único bucle visual por estado
-            Map<Object, Object> buclesPorEstado = new HashMap<>();
-
-            for (NormalizadorAutomata.Arista arista
-                    : paso.getTransiciones()) {
-
-                Object origen = vertices.get(arista.getOrigen());
-                Object destino = vertices.get(arista.getDestino());
-
-                if (origen == null || destino == null) {
-                    continue;
-                }
-
-                String etiqueta = arista.getSimbolo();
-
-                if (etiqueta != null
-                        && etiqueta.length() > LIMITE_ETIQUETA_REGEX) {
-
-                    numeroReferencia++;
-                    etiqueta = "R" + numeroReferencia;
-                }
-                
-                
-                // Si el estado ya tiene un bucle,
-                // unir las etiquetas en una sola flecha
-                if (origen == destino) {
-
-                    Object bucleExistente = buclesPorEstado.get(origen);
-
-                    if (bucleExistente != null) {
-
-                        String etiquetaAnterior = String.valueOf(
-                                grafo.getModel().getValue(bucleExistente)
-                        );
-
-                        grafo.getModel().setValue(
-                                bucleExistente,
-                                etiquetaAnterior + " | " + etiqueta
-                        );
-
-                        continue;
-                    }
-                }
-                
-                
-                Object flecha = grafo.insertEdge(
-                        parent,
-                        null,
-                        etiqueta,
-                        origen,
-                        destino,
-                        "strokeColor=#8B5CF6;"
-                        + "strokeWidth=2;"
-                        + "endArrow=classic;"
-                        + "fontSize=13;"
-                        + "fontColor=#4C1D95;"
-                        + "labelBackgroundColor=#FAF7FF;"
-                        + "rounded=1;"
-                    );
-                
-                if (origen == destino) {
-                    
-                    buclesPorEstado.put(origen, flecha);
-                    
-                    grafo.setCellStyles(
-                            mxConstants.STYLE_LOOP,
-                            "loopEdgeStyle",
-                            new Object[]{flecha}
-                    );
-
-                    grafo.setCellStyles(
-                            mxConstants.STYLE_DIRECTION,
-                            mxConstants.DIRECTION_NORTH,
-                            new Object[]{flecha}
-                    );
-
-                    grafo.setCellStyles(
-                            mxConstants.STYLE_SEGMENT,
-                            "30",
-                            new Object[]{flecha}
-                    );
-
-                    grafo.setCellStyles(
-                            mxConstants.STYLE_ROUNDED,
-                            "1",
-                            new Object[]{flecha}
-                    );
-
-                    grafo.setCellStyles(
-                            mxConstants.STYLE_SHAPE,
-                            mxConstants.SHAPE_CURVE,
-                            new Object[]{flecha}
-                    );
-
-                } else {
-
-                    separarFlecha(
-                            grafo, flecha, origen, destino, carriles
-                    );
-                }
-                
-                }
-            }finally {
-            grafo.getModel().endUpdate();
-        }
-
-        return grafo;
-    }
+ 
     
     
     private void estilizarBotonRegex(
             JButton boton, Color fondo, Color texto) {
 
-        boton.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        boton.setBackground(fondo);
-        boton.setForeground(texto);
-        boton.setFocusPainted(false);
-        boton.setOpaque(true);
-        boton.setContentAreaFilled(true);
-
-        boton.setBorder(
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(
-                                new Color(189, 165, 235), 1, true
-                        ),
-                        BorderFactory.createEmptyBorder(9, 14, 9, 14)
-                )
+        EstilosUI.estilizarBotonRegex(
+                boton, fondo, texto
         );
-
-        boton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-    
-        Color fondoNormal = fondo;
-
-        boton.addPropertyChangeListener("enabled", evt -> {
-
-            if (boton.isEnabled()) {
-                boton.setBackground(fondoNormal);
-                boton.setForeground(texto);
-                boton.setBorder(
-                        BorderFactory.createCompoundBorder(
-                                BorderFactory.createLineBorder(
-                                        new Color(189, 165, 235), 1, true
-                                ),
-                                BorderFactory.createEmptyBorder(9, 14, 9, 14)
-                        )
-                );
-            } else {
-                boton.setBackground(new Color(246, 242, 251));
-                boton.setForeground(new Color(145, 130, 180));
-                boton.setBorder(
-                        BorderFactory.createCompoundBorder(
-                                BorderFactory.createLineBorder(
-                                        new Color(220, 210, 240), 1, true
-                                ),
-                                BorderFactory.createEmptyBorder(9, 14, 9, 14)
-                        )
-                );
-            }
-
-            boton.repaint();
-        });
-
-        if (!boton.isEnabled()) {
-            boton.setBackground(new Color(246, 242, 251));
-            boton.setForeground(new Color(145, 130, 180));
-            boton.setBorder(
-                    BorderFactory.createCompoundBorder(
-                            BorderFactory.createLineBorder(
-                                    new Color(220, 210, 240), 1, true
-                            ),
-                            BorderFactory.createEmptyBorder(9, 14, 9, 14)
-                    )
-            );
-        }
-
     }
 
 }
